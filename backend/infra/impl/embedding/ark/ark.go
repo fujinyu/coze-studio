@@ -18,11 +18,16 @@ package ark
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"net/http"
 
 	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
+	"github.com/coze-dev/coze-studio/backend/types/errno"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	contract "github.com/coze-dev/coze-studio/backend/infra/contract/embedding"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/slices"
@@ -51,6 +56,19 @@ func (d embWrap) EmbedStrings(ctx context.Context, texts []string, opts ...embed
 		}
 		normed, err := d.slicedNormL2(partResult)
 		if err != nil {
+			var (
+				apiErr = &model.APIError{}
+				reqErr = &model.RequestError{}
+			)
+			if errors.As(err, &apiErr) {
+				if reqErr.HTTPStatusCode < http.StatusInternalServerError && apiErr.HTTPStatusCode != http.StatusTooManyRequests {
+					return nil, errorx.WrapByCode(err, errno.ErrKnowledgeNonRetryableCode)
+				}
+			} else if errors.As(err, &reqErr) {
+				if reqErr.HTTPStatusCode < http.StatusInternalServerError {
+					return nil, errorx.WrapByCode(err, errno.ErrKnowledgeNonRetryableCode)
+				}
+			}
 			return nil, err
 		}
 		resp = append(resp, normed...)
